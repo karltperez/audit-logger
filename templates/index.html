@@ -15,12 +15,14 @@
                     </p>
                 </div>
                 <div class="flex space-x-3">
+                    {% if session.user_role in ['superadmin', 'admin', 'editor'] %}
                     <a href="{{ url_for('add_finding') }}" class="inline-flex items-center px-4 py-2 bg-green-600 border border-transparent rounded-md text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
                         <svg class="mr-2 -ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                         </svg>
                         Add New Finding
                     </a>
+                    {% endif %}
                     <a href="{{ url_for('findings') }}" class="inline-flex items-center px-4 py-2 bg-blue-600 border border-transparent rounded-md text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                         <svg class="mr-2 -ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
@@ -266,16 +268,23 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                     <div class="flex space-x-2">
+                                        {% if session.user_role in ['superadmin', 'admin', 'editor'] %}
                                         <a href="{{ url_for('edit_finding', id=finding.id) }}" class="text-blue-400 hover:text-blue-300">
                                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                                             </svg>
                                         </a>
-                                        <a href="{{ url_for('delete_finding', id=finding.id) }}" class="text-red-400 hover:text-red-300" onclick="return confirm('Are you sure you want to delete this finding?')">
+                                        {% endif %}
+                                        {% if session.user_role in ['superadmin', 'admin'] %}
+                                        <form method="POST" action="{{ url_for('delete_finding', id=finding.id) }}" class="inline" onsubmit="return confirm('Are you sure you want to delete this finding?')">
+                                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="text-red-400 hover:text-red-300">
                                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                             </svg>
-                                        </a>
+                                            </button>
+                                        </form>
+                                        {% endif %}
                                     </div>
                                 </td>
                             </tr>
@@ -494,14 +503,18 @@ async function showFindingsByStatus(status) {
         content += '</thead>';
         content += '<tbody class="bg-gray-800 divide-y divide-gray-600">';
         
+        const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+        })[character]);
+
         if (findings.length > 0) {
             findings.forEach(finding => {
                 content += '<tr class="hover:bg-gray-700">';
-                content += `<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${finding.audit_reference || 'N/A'}</td>`;
-                content += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${(finding.audit_report || 'N/A').substring(0, 30)}...</td>`;
-                content += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${finding.priority || 'Not Set'}</td>`;
-                content += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${finding.person_responsible || 'Unassigned'}</td>`;
-                content += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${finding.target_date || 'No target date'}</td>`;
+                content += `<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${escapeHtml(finding.audit_reference || 'N/A')}</td>`;
+                content += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${escapeHtml((finding.audit_report || 'N/A').substring(0, 30))}...</td>`;
+                content += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${escapeHtml(finding.priority || 'Not Set')}</td>`;
+                content += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${escapeHtml(finding.person_responsible || 'Unassigned')}</td>`;
+                content += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${escapeHtml(finding.target_date || 'No target date')}</td>`;
                 content += `<td class="px-6 py-4 whitespace-nowrap text-sm font-medium">`;
                 content += `<a href="/edit/${finding.id}" class="text-blue-400 hover:text-blue-300">Edit</a>`;
                 content += `</td>`;

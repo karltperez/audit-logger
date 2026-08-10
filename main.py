@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, make_response, session, flash
+from flask import Flask, render_template, request, redirect, url_for, jsonify, make_response, session, flash, abort
 import sqlite3
 from datetime import datetime, timedelta
 import csv
@@ -8,17 +8,26 @@ import uuid
 from functools import wraps
 import time
 import os
+import secrets
+from urllib.parse import urljoin, urlparse
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from openpyxl import Workbook
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')  # Use environment variable in production
+IS_PRODUCTION = os.environ.get('FLASK_ENV', '').lower() == 'production'
+secret_key = os.environ.get('SECRET_KEY')
+if IS_PRODUCTION and not secret_key:
+    raise RuntimeError('SECRET_KEY is required when FLASK_ENV=production')
+app.secret_key = secret_key or secrets.token_hex(32)
 app.permanent_session_lifetime = timedelta(minutes=5)  # Session expires in 5 minutes
 
 # Enhanced security configuration
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,    # Prevent JavaScript access
-    SESSION_COOKIE_SAMESITE='Lax',   # CSRF protection
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=IS_PRODUCTION,
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=5)  # 5-minute timeout
 )
 
@@ -42,6 +51,14 @@ PASSWORD_CHANGE_ATTEMPTS = {}
 
 # Password requirements based on industry standards (NIST/OWASP)
 PASSWORD_REQUIREMENTS = {
+    'superadmin': {
+        'min_length': 14,
+        'require_uppercase': True,
+        'require_lowercase': True,
+        'require_numbers': True,
+        'require_special': True,
+        'description': 'Minimum 14 characters with uppercase, lowercase, numbers, and special characters'
+    },
     'admin': {
         'min_length': 12,
         'require_uppercase': True,
@@ -68,11 +85,41 @@ PASSWORD_REQUIREMENTS = {
     }
 }
 
-# Default admin credentials (in production, use a proper user database)
+# Initial local credential. Production deployments must set INITIAL_ADMIN_PASSWORD.
 DEFAULT_ADMIN = {
     'username': 'admin',
-    'password': 'admin'  # In production, use hashed passwords!
+    'password': os.environ.get('INITIAL_ADMIN_PASSWORD', 'ChangeMeNow2026!')
 }
+
+DATABASE_PATH = os.environ.get('DATABASE_PATH', 'audit_findings.db')
+
+if IS_PRODUCTION and not os.environ.get('INITIAL_ADMIN_PASSWORD') and not os.path.exists(DATABASE_PATH):
+    raise RuntimeError('INITIAL_ADMIN_PASSWORD is required for first-time production setup')
+
+def get_csrf_token():
+    """Return a stable, cryptographically random token for the current session."""
+    if '_csrf_token' not in session:
+        session['_csrf_token'] = secrets.token_urlsafe(32)
+    return session['_csrf_token']
+
+@app.before_request
+def validate_csrf_token():
+    if request.method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
+        submitted = request.form.get('_csrf_token') or request.headers.get('X-CSRF-Token')
+        expected = session.get('_csrf_token')
+        if not expected or not submitted or not secrets.compare_digest(expected, submitted):
+            abort(400, description='Invalid or missing CSRF token')
+
+@app.context_processor
+def inject_csrf_token():
+    return {'csrf_token': get_csrf_token}
+
+def is_safe_redirect_target(target):
+    if not target:
+        return False
+    host_url = urlparse(request.host_url)
+    redirect_url = urlparse(urljoin(request.host_url, target))
+    return redirect_url.scheme in {'http', 'https'} and host_url.netloc == redirect_url.netloc
 
 # Brute force protection functions
 def get_delay_for_ip(ip_address):
@@ -117,20 +164,13 @@ def is_account_locked(username):
     
     return failed_count >= 5  # Lock after 5 failed attempts in 15 minutes
 
-def cleanup_old_attempts():
-    """Clean up old failed attempt records (run periodically)"""
-    cutoff_time = datetime.now() - timedelta(hours=1)
-    # Remove entries older than 1 hour
-    global failed_attempts
-    # In production, implement proper cleanup logic
-
 @app.after_request
 def set_security_headers(response):
     """Add security headers to all responses"""
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    # Remove X-Frame-Options to allow external resources and icons
-    # response.headers['X-Frame-Options'] = 'SAMEORIGIN'  # Commented out to fix icon loading
-    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
     # Only add HSTS in production with HTTPS
     if request.is_secure:
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
@@ -140,7 +180,7 @@ def set_security_headers(response):
 
 # Database setup
 def init_db():
-    conn = sqlite3.connect('audit_findings.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS audit_findings (
@@ -181,13 +221,41 @@ def init_db():
     )
     """)
     
+    # Migrate the original role constraint and promote existing administrators.
+    users_sql = cursor.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+    ).fetchone()
+    if users_sql and "'superadmin'" not in users_sql[0]:
+        cursor.execute("""
+        CREATE TABLE users_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT DEFAULT 'viewer' CHECK (role IN ('superadmin', 'admin', 'editor', 'viewer')),
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT,
+            is_active BOOLEAN DEFAULT 1,
+            must_change_password BOOLEAN DEFAULT 0,
+            temp_password BOOLEAN DEFAULT 0,
+            created_by TEXT
+        )
+        """)
+        cursor.execute("""
+        INSERT INTO users_new
+        SELECT id, username, password, CASE WHEN role = 'admin' THEN 'superadmin' ELSE role END,
+               created_at, updated_at, is_active, must_change_password, temp_password, created_by
+        FROM users
+        """)
+        cursor.execute('DROP TABLE users')
+        cursor.execute('ALTER TABLE users_new RENAME TO users')
+
     # Create users table for password management
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
-        role TEXT DEFAULT 'viewer' CHECK (role IN ('admin', 'editor', 'viewer')),
+        role TEXT DEFAULT 'viewer' CHECK (role IN ('superadmin', 'admin', 'editor', 'viewer')),
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT,
         is_active BOOLEAN DEFAULT 1,
@@ -199,23 +267,38 @@ def init_db():
     
     # Insert default admin user if not exists
     cursor.execute("""
-    INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)
-    """, (DEFAULT_ADMIN['username'], DEFAULT_ADMIN['password'], 'admin'))
+    INSERT OR IGNORE INTO users (username, password, role, must_change_password, temp_password)
+    VALUES (?, ?, ?, 1, 1)
+    """, (DEFAULT_ADMIN['username'], generate_password_hash(DEFAULT_ADMIN['password']), 'superadmin'))
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recipient TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        read_at TEXT
+    )
+    """)
     
     conn.commit()
     conn.close()
 
+# WSGI servers import the module without running the __main__ block.
+init_db()
+
 def get_db_connection():
-    conn = sqlite3.connect('audit_findings.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 # Activity logging functions
-def log_activity(action, details=None):
+def log_activity(action, details=None, username_override=None):
     """Log user activity to the database"""
     try:
         conn = get_db_connection()
-        username = session.get('username', 'Anonymous')
+        username = username_override or session.get('username', 'Anonymous')
         session_id = session.get('session_id', 'N/A')
         ip_address = request.remote_addr
         user_agent = request.headers.get('User-Agent', 'Unknown')
@@ -248,7 +331,7 @@ def update_user_password(username, new_password):
     conn = get_db_connection()
     conn.execute("""
         UPDATE users SET password = ?, updated_at = ?, must_change_password = 0, temp_password = 0 WHERE username = ?
-    """, (new_password, datetime.now().isoformat(), username))
+    """, (generate_password_hash(new_password), datetime.now().isoformat(), username))
     conn.commit()
     conn.close()
 
@@ -259,7 +342,7 @@ def create_user(username, temp_password, role, created_by):
         conn.execute("""
             INSERT INTO users (username, password, role, created_by, must_change_password, temp_password, created_at)
             VALUES (?, ?, ?, ?, 1, 1, ?)
-        """, (username, temp_password, role, created_by, datetime.now().isoformat()))
+        """, (username, generate_password_hash(temp_password), role, created_by, datetime.now().isoformat()))
         conn.commit()
         conn.close()
         return True
@@ -338,7 +421,25 @@ def activate_user(username):
 def is_admin(username):
     """Check if user is admin"""
     user = get_user_from_db(username)
-    return user and user['role'] == 'admin'
+    return user and user['role'] in {'superadmin', 'admin'}
+
+def is_superadmin(username):
+    user = get_user_from_db(username)
+    return user and user['role'] == 'superadmin'
+
+def verify_password(user, candidate):
+    """Verify a password and transparently migrate legacy plaintext values."""
+    stored = user['password']
+    if stored.startswith(('scrypt:', 'pbkdf2:')):
+        return check_password_hash(stored, candidate)
+    if secrets.compare_digest(stored, candidate):
+        conn = get_db_connection()
+        conn.execute('UPDATE users SET password = ?, updated_at = ? WHERE username = ?',
+                     (generate_password_hash(candidate), datetime.now().isoformat(), user['username']))
+        conn.commit()
+        conn.close()
+        return True
+    return False
 
 # Session management functions
 def generate_session_id():
@@ -404,6 +505,10 @@ def login_required(f):
         
         # CRITICAL SECURITY: Check if user must change password and restrict access
         user = get_user_from_db(username)
+        if not user or not user['is_active']:
+            session.clear()
+            return redirect(url_for('login'))
+        session['user_role'] = user['role']
         if user and user['must_change_password']:
             # Only allow access to force_password_change, logout, and reset_password_loop
             allowed_endpoints = {'force_password_change', 'logout', 'reset_password_loop'}
@@ -423,8 +528,28 @@ def admin_required(f):
     def decorated_function(*args, **kwargs):
         username = session.get('username')
         if not is_admin(username):
-            flash('Access denied. Admin privileges required.', 'error')
-            return redirect(url_for('index'))
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
+def roles_required(*allowed_roles):
+    def decorator(f):
+        @wraps(f)
+        @login_required
+        def decorated_function(*args, **kwargs):
+            user = get_user_from_db(session.get('username'))
+            if not user or user['role'] not in allowed_roles:
+                abort(403)
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+def superadmin_required(f):
+    @wraps(f)
+    @login_required
+    def decorated_function(*args, **kwargs):
+        if not is_superadmin(session.get('username')):
+            abort(403)
         return f(*args, **kwargs)
     return decorated_function
 
@@ -466,7 +591,7 @@ def login():
         user = get_user_from_db(username)
         
         # Simple authentication (in production, use proper password hashing)
-        if user and user['password'] == password and user['is_active']:
+        if user and user['is_active'] and verify_password(user, password):
             # Successful login - reset failed attempts for this IP
             reset_failed_attempts(client_ip)
             
@@ -520,7 +645,7 @@ def login():
             # Prevent redirect loops to force-password-change
             if next_page and 'force-password-change' in next_page:
                 next_page = None
-            redirect_url = next_page if next_page else url_for('index')
+            redirect_url = next_page if is_safe_redirect_target(next_page) else url_for('index')
             return redirect(redirect_url)
         else:
             # Record failed attempt
@@ -552,7 +677,8 @@ def login():
     
     return render_template('login.html', current_year=datetime.now().year)
 
-@app.route('/logout')
+@app.route('/logout', methods=['POST'])
+@login_required
 def logout():
     # Log logout activity before clearing session
     log_activity('LOGOUT', 'User logged out')
@@ -570,7 +696,7 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route('/admin/sessions')
-@login_required
+@admin_required
 def view_sessions():
     """Admin route to view active sessions (for debugging)"""
     log_activity('VIEW_SESSIONS', 'Accessed active sessions page')
@@ -587,7 +713,7 @@ def view_sessions():
     })
 
 @app.route('/activity-logs')
-@login_required
+@roles_required('superadmin', 'admin', 'editor')
 def activity_logs():
     """View activity logs"""
     log_activity('VIEW_ACTIVITY_LOGS', 'Accessed activity logs page')
@@ -652,7 +778,7 @@ def settings():
             return render_template('settings.html', user=user, password_requirements=PASSWORD_REQUIREMENTS)
         
         # Verify current password
-        if not user or user['password'] != current_password:
+        if not user or not verify_password(user, current_password):
             flash('Current password is incorrect', 'error')
             log_activity('PASSWORD_CHANGE_FAILED', 'Incorrect current password provided')
             return render_template('settings.html', user=user, password_requirements=PASSWORD_REQUIREMENTS)
@@ -739,7 +865,7 @@ def force_password_change():
             return render_template('force_password_change.html', user=user, password_requirements=PASSWORD_REQUIREMENTS)
         
         # Verify current password (temporary password)
-        if user['password'] != current_password:
+        if not verify_password(user, current_password):
             flash('Current temporary password is incorrect', 'error')
             log_activity('PASSWORD_CHANGE_FAILED', 'Incorrect temporary password provided')
             return render_template('force_password_change.html', user=user, password_requirements=PASSWORD_REQUIREMENTS)
@@ -785,7 +911,7 @@ def reset_password_loop():
     return redirect(url_for('login'))
 
 @app.route('/admin/users')
-@admin_required
+@superadmin_required
 def manage_users():
     """Admin page to manage users"""
     users = get_all_users()
@@ -793,7 +919,7 @@ def manage_users():
     return render_template('admin/manage_users.html', users=users, password_requirements=PASSWORD_REQUIREMENTS)
 
 @app.route('/admin/users/add', methods=['GET', 'POST'])
-@admin_required
+@superadmin_required
 def add_user():
     """Admin page to add new user"""
     if request.method == 'POST':
@@ -806,7 +932,7 @@ def add_user():
             flash('Username and temporary password are required', 'error')
             return render_template('admin/add_user.html', password_requirements=PASSWORD_REQUIREMENTS)
         
-        if role not in ['admin', 'editor', 'viewer']:
+        if role not in ['superadmin', 'admin', 'editor', 'viewer']:
             flash('Invalid role selected', 'error')
             return render_template('admin/add_user.html', password_requirements=PASSWORD_REQUIREMENTS)
         
@@ -828,7 +954,7 @@ def add_user():
     return render_template('admin/add_user.html', password_requirements=PASSWORD_REQUIREMENTS)
 
 @app.route('/admin/users/<username>/toggle-status', methods=['POST'])
-@admin_required
+@superadmin_required
 def toggle_user_status(username):
     """Toggle user active/inactive status"""
     user = get_user_from_db(username)
@@ -852,6 +978,67 @@ def toggle_user_status(username):
         flash(f'User "{username}" has been activated', 'success')
     
     return redirect(url_for('manage_users'))
+
+@app.route('/admin/users/<username>/delete', methods=['POST'])
+@superadmin_required
+def delete_user(username):
+    if username == session.get('username'):
+        flash('You cannot delete your own account.', 'error')
+        return redirect(url_for('manage_users'))
+
+    user = get_user_from_db(username)
+    if not user:
+        abort(404)
+    if user['role'] == 'superadmin':
+        conn = get_db_connection()
+        count = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'superadmin'").fetchone()[0]
+        conn.close()
+        if count <= 1:
+            flash('The last superadmin account cannot be deleted.', 'error')
+            return redirect(url_for('manage_users'))
+
+    conn = get_db_connection()
+    conn.execute('DELETE FROM user_alerts WHERE recipient = ?', (username,))
+    conn.execute('DELETE FROM users WHERE username = ?', (username,))
+    conn.commit()
+    conn.close()
+    invalidate_previous_sessions(username)
+    log_activity('DELETE_USER', f'Deleted user: {username}')
+    flash(f'User "{username}" was deleted.', 'success')
+    return redirect(url_for('manage_users'))
+
+@app.route('/admin/users/<username>/alert', methods=['POST'])
+@superadmin_required
+def send_user_alert(username):
+    if not get_user_from_db(username):
+        abort(404)
+    message = request.form.get('message', '').strip()
+    if not message or len(message) > 500:
+        flash('Alert text must be between 1 and 500 characters.', 'error')
+        return redirect(url_for('manage_users'))
+
+    conn = get_db_connection()
+    conn.execute(
+        'INSERT INTO user_alerts (recipient, sender, message) VALUES (?, ?, ?)',
+        (username, session['username'], message),
+    )
+    conn.commit()
+    conn.close()
+    log_activity('SEND_USER_ALERT', f'Sent alert to {username}')
+    flash(f'Alert sent to "{username}".', 'success')
+    return redirect(url_for('manage_users'))
+
+@app.route('/alerts/<int:alert_id>/read', methods=['POST'])
+@login_required
+def mark_alert_read(alert_id):
+    conn = get_db_connection()
+    conn.execute(
+        'UPDATE user_alerts SET read_at = ? WHERE id = ? AND recipient = ?',
+        (datetime.now().isoformat(), alert_id, session['username']),
+    )
+    conn.commit()
+    conn.close()
+    return redirect(request.referrer if is_safe_redirect_target(request.referrer) else url_for('index'))
 
 @app.route('/')
 @login_required
@@ -881,7 +1068,7 @@ def findings():
     return render_template('findings.html', findings=findings)
 
 @app.route('/add', methods=['GET', 'POST'])
-@login_required
+@roles_required('superadmin', 'admin', 'editor')
 def add_finding():
     if request.method == 'POST':
         conn = get_db_connection()
@@ -956,7 +1143,7 @@ def add_finding():
     return render_template('add_finding.html')
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
-@login_required
+@roles_required('superadmin', 'admin', 'editor')
 def edit_finding(id):
     conn = get_db_connection()
     
@@ -1013,8 +1200,8 @@ def edit_finding(id):
     conn.close()
     return render_template('edit_finding.html', finding=finding)
 
-@app.route('/delete/<int:id>')
-@login_required
+@app.route('/delete/<int:id>', methods=['POST'])
+@admin_required
 def delete_finding(id):
     conn = get_db_connection()
     conn.execute('DELETE FROM audit_findings WHERE id = ?', (id,))
@@ -1051,7 +1238,7 @@ def export_csv():
     return response
 
 @app.route('/import', methods=['GET', 'POST'])
-@login_required
+@roles_required('superadmin', 'admin', 'editor')
 def import_findings():
     if request.method == 'POST':
         if 'file' not in request.files:
@@ -1224,9 +1411,6 @@ def get_chart_data(year):
         'Closed': 0
     }
     
-    from datetime import datetime
-    import re
-    
     # Function to extract year from various date formats
     def extract_year(date_str):
         if not date_str or date_str.strip() == '':
@@ -1279,7 +1463,7 @@ def get_chart_data(year):
                 # Extract year from created_at (ISO format)
                 if finding['created_at']:
                     finding_year = int(finding['created_at'][:4])
-            except:
+            except (TypeError, ValueError):
                 finding_year = None
         
         # If this finding belongs to the requested year, count it
@@ -1304,9 +1488,6 @@ def get_findings_by_status(status, year):
     ''', (status,)).fetchall()
     
     conn.close()
-    
-    from datetime import datetime
-    import re
     
     # Function to extract year from various date formats
     def extract_year(date_str):
@@ -1361,7 +1542,7 @@ def get_findings_by_status(status, year):
                 # Extract year from created_at (ISO format)
                 if finding['created_at']:
                     finding_year = int(finding['created_at'][:4])
-            except:
+            except (TypeError, ValueError):
                 finding_year = None
         
         # If this finding belongs to the requested year, include it
@@ -1448,15 +1629,15 @@ def download_template(format):
         writer.writerow(sample_row)
         
         response = make_response(output.getvalue())
-        response.headers['Content-Disposition'] = f'attachment; filename=audit_findings_template.csv'
+        response.headers['Content-Disposition'] = 'attachment; filename=audit_findings_template.csv'
         response.headers['Content-Type'] = 'text/csv'
         return response
     
     elif format.lower() == 'xlsx':
-        # For Excel template, we'll create a CSV for now (in production, use openpyxl)
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(headers)
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = 'Audit Findings'
+        worksheet.append(headers)
         
         # Add sample row
         sample_row = [
@@ -1466,10 +1647,12 @@ def download_template(format):
             '2025-01-15', '', '', 'John Doe', 'Finance Department',
             'In-Progress', 'No', 'Testing procedures used', 'Additional comments'
         ]
-        writer.writerow(sample_row)
+        worksheet.append(sample_row)
         
+        output = io.BytesIO()
+        workbook.save(output)
         response = make_response(output.getvalue())
-        response.headers['Content-Disposition'] = f'attachment; filename=audit_findings_template.xlsx'
+        response.headers['Content-Disposition'] = 'attachment; filename=audit_findings_template.xlsx'
         response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         return response
     
@@ -1492,17 +1675,25 @@ def inject_template_vars():
             context['user_must_change_password'] = False
     else:
         context['user_must_change_password'] = False
+
+    context['user_alerts'] = []
+    if session.get('username'):
+        conn = get_db_connection()
+        alerts = conn.execute(
+            'SELECT id, sender, message, created_at FROM user_alerts '
+            'WHERE recipient = ? AND read_at IS NULL ORDER BY created_at DESC LIMIT 5',
+            (session['username'],),
+        ).fetchall()
+        conn.close()
+        context['user_alerts'] = [dict(alert) for alert in alerts]
     
     return context
 
 if __name__ == '__main__':
-    import os
-    init_db()
-    
     # Get port from environment variable (for cloud deployments) or default to 5000
     port = int(os.environ.get('PORT', 5000))
     host = os.environ.get('HOST', '0.0.0.0')  # Bind to all interfaces for cloud deployment
-    debug = os.environ.get('FLASK_ENV') != 'production'
+    debug = os.environ.get('FLASK_DEBUG', '').lower() in {'1', 'true', 'yes'} and not IS_PRODUCTION
     
     print("🚀 Starting Internal Audit Tracker...")
     print("📊 Database initialized successfully!")

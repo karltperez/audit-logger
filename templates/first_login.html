@@ -60,6 +60,7 @@
 
         <!-- Form -->
         <form class="mt-8 space-y-6" method="POST">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             {% if error %}
             <div class="bg-red-900 border border-red-700 text-red-300 px-4 py-3 rounded">
                 {{ error }}

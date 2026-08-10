@@ -29,6 +29,7 @@
         <div class="bg-gray-800 shadow-sm rounded-lg border border-gray-700">
             <div class="px-4 py-5 sm:p-6">
                 <form method="POST" class="space-y-6">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <!-- Username -->
                     <div>
                         <label for="username" class="block text-sm font-medium text-gray-300">

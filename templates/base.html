@@ -1,9 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-900">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Internal Audit Tracker{% endblock %}</title>
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -68,19 +70,23 @@
                             </svg>
                             Findings
                         </a>
+                        {% if session.user_role in ['superadmin', 'admin', 'editor'] %}
                         <a href="{{ url_for('add_finding') }}" class="inline-flex items-center px-1 pt-1 text-sm font-medium {{ 'border-b-2 border-audit-blue text-audit-blue' if request.endpoint == 'add_finding' else 'border-b-2 border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700' }}">
                             <svg class="mr-2 hero-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                             </svg>
                             Add Finding
                         </a>
+                        {% endif %}
+                        {% if session.user_role in ['superadmin', 'admin', 'editor'] %}
                         <a href="{{ url_for('activity_logs') }}" class="inline-flex items-center px-1 pt-1 text-sm font-medium {{ 'border-b-2 border-audit-blue text-audit-blue' if request.endpoint == 'activity_logs' else 'border-b-2 border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700' }}">
                             <svg class="mr-2 hero-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                             </svg>
                             Activity Log
                         </a>
-                        {% if session.user_role == 'admin' %}
+                        {% endif %}
+                        {% if session.user_role == 'superadmin' %}
                         <a href="{{ url_for('manage_users') }}" class="inline-flex items-center px-1 pt-1 text-sm font-medium {{ 'border-b-2 border-blue-400 text-blue-400' if request.endpoint in ['manage_users', 'add_user'] else 'border-b-2 border-transparent text-gray-300 hover:border-gray-400 hover:text-white' }}">
                             <svg class="mr-2 hero-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"></path>
@@ -94,9 +100,13 @@
                     <div class="flex-shrink-0">
                         <div class="relative ml-3">
                             <div class="flex items-center space-x-3">
+                                <button type="button" class="theme-toggle" data-theme-toggle>
+                                    <span data-theme-sun aria-hidden="true">&#9728;</span>
+                                    <span data-theme-moon aria-hidden="true">&#9790;</span>
+                                </button>
                                 <span class="text-sm font-medium text-gray-700">{{ session.username }}</span>
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ 'bg-red-100 text-red-800' if session.user_role == 'admin' else 'bg-blue-100 text-blue-800' if session.user_role == 'editor' else 'bg-gray-100 text-gray-800' }}">
-                                    {{ session.user_role|title }}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ 'bg-red-100 text-red-800' if session.user_role == 'superadmin' else 'bg-blue-100 text-blue-800' if session.user_role in ['admin', 'editor'] else 'bg-gray-100 text-gray-800' }}">
+                                    {{ 'Superadmin' if session.user_role == 'superadmin' else session.user_role|title }}
                                 </span>
                                 <div class="relative">
                                     <button type="button" class="flex text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-audit-blue" onclick="toggleDropdown()">
@@ -112,12 +122,15 @@
                                             </svg>
                                             Settings
                                         </a>
-                                        <a href="{{ url_for('logout') }}" class="flex items-center px-4 py-2 text-sm text-gray-300 hover:bg-gray-600 hover:text-white">
+                                        <form method="POST" action="{{ url_for('logout') }}">
+                                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="flex w-full items-center px-4 py-2 text-sm text-gray-300 hover:bg-gray-600 hover:text-white">
                                             <svg class="mr-3 hero-icon-sm" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
                                             </svg>
                                             Sign out
-                                        </a>
+                                            </button>
+                                        </form>
                                     </div>
                                 </div>
                             </div>
@@ -132,14 +145,33 @@
             <div class="pt-2 pb-3 space-y-1 bg-gray-700">
                 <a href="{{ url_for('index') }}" class="block pl-3 pr-4 py-2 text-base font-medium {{ 'bg-blue-600 text-white border-blue-600' if request.endpoint == 'index' else 'text-gray-300 hover:text-white hover:bg-gray-600' }}">Dashboard</a>
                 <a href="{{ url_for('findings') }}" class="block pl-3 pr-4 py-2 text-base font-medium {{ 'bg-blue-600 text-white border-blue-600' if request.endpoint == 'findings' else 'text-gray-300 hover:text-white hover:bg-gray-600' }}">Findings</a>
+                {% if session.user_role in ['superadmin', 'admin', 'editor'] %}
                 <a href="{{ url_for('add_finding') }}" class="block pl-3 pr-4 py-2 text-base font-medium {{ 'bg-blue-600 text-white border-blue-600' if request.endpoint == 'add_finding' else 'text-gray-300 hover:text-white hover:bg-gray-600' }}">Add Finding</a>
                 <a href="{{ url_for('activity_logs') }}" class="block pl-3 pr-4 py-2 text-base font-medium {{ 'bg-blue-600 text-white border-blue-600' if request.endpoint == 'activity_logs' else 'text-gray-300 hover:text-white hover:bg-gray-600' }}">Activity Log</a>
-                {% if session.user_role == 'admin' %}
+                {% endif %}
+                {% if session.user_role == 'superadmin' %}
                 <a href="{{ url_for('manage_users') }}" class="block pl-3 pr-4 py-2 text-base font-medium {{ 'bg-blue-600 text-white border-blue-600' if request.endpoint in ['manage_users', 'add_user'] else 'text-gray-300 hover:text-white hover:bg-gray-600' }}">Users</a>
                 {% endif %}
             </div>
         </div>
     </nav>
+    {% endif %}
+
+    {% if user_alerts %}
+    <div class="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8 space-y-2">
+        {% for alert in user_alerts %}
+        <div class="flex items-start gap-3 rounded-md border border-blue-500 bg-blue-50 p-3 text-blue-900">
+            <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold">Alert from {{ alert.sender }}</p>
+                <p class="mt-1 break-words text-sm">{{ alert.message }}</p>
+            </div>
+            <form method="POST" action="{{ url_for('mark_alert_read', alert_id=alert.id) }}">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="text-xl leading-none" title="Dismiss alert" aria-label="Dismiss alert">&times;</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
     {% endif %}
 
     <!-- Flash Messages -->

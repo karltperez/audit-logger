@@ -2,6 +2,84 @@
 
 /* Tailwind CSS CDN is loaded in base.html, this file is for any custom overrides */
 
+html,
+body,
+nav,
+main,
+div,
+table,
+input,
+select,
+textarea {
+    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.theme-toggle {
+    align-items: center;
+    background: transparent;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    color: inherit;
+    display: inline-flex;
+    font-size: 1.1rem;
+    height: 2.25rem;
+    justify-content: center;
+    width: 2.25rem;
+}
+
+.theme-toggle:hover {
+    background: rgba(107, 114, 128, 0.16);
+}
+
+.theme-toggle:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+.theme-toggle-floating {
+    position: fixed;
+    right: 1rem;
+    top: 1rem;
+    z-index: 60;
+}
+
+[data-theme='light'] body,
+[data-theme='light'].bg-gray-900,
+[data-theme='light'] .bg-gray-900 { background-color: #f4f6f8 !important; }
+[data-theme='light'] .bg-gray-800 { background-color: #ffffff !important; }
+[data-theme='light'] .bg-gray-700 { background-color: #f3f4f6 !important; }
+[data-theme='light'] .bg-gray-600 { background-color: #e5e7eb !important; }
+[data-theme='light'] .border-gray-700,
+[data-theme='light'] .border-gray-600,
+[data-theme='light'] .divide-gray-600 > :not([hidden]) ~ :not([hidden]),
+[data-theme='light'] .divide-gray-500 > :not([hidden]) ~ :not([hidden]) { border-color: #d1d5db !important; }
+[data-theme='light'] .text-white:not([class*='bg-blue-']):not([class*='bg-green-']):not([class*='bg-red-']):not([class*='bg-indigo-']),
+[data-theme='light'] .text-gray-100,
+[data-theme='light'] .text-gray-200,
+[data-theme='light'] .text-gray-300 { color: #1f2937 !important; }
+[data-theme='light'] .text-gray-400,
+[data-theme='light'] .text-gray-500 { color: #4b5563 !important; }
+
+[data-theme='dark'] body,
+[data-theme='dark'] .bg-gray-100,
+[data-theme='dark'] .bg-gray-50 { background-color: #111827 !important; }
+[data-theme='dark'] .bg-white { background-color: #1f2937 !important; }
+[data-theme='dark'] .bg-gray-200 { background-color: #374151 !important; }
+[data-theme='dark'] .border-gray-200,
+[data-theme='dark'] .border-gray-300,
+[data-theme='dark'] .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+[data-theme='dark'] .divide-gray-300 > :not([hidden]) ~ :not([hidden]) { border-color: #4b5563 !important; }
+[data-theme='dark'] .text-gray-900,
+[data-theme='dark'] .text-gray-800,
+[data-theme='dark'] .text-gray-700 { color: #f3f4f6 !important; }
+[data-theme='dark'] .text-gray-600,
+[data-theme='dark'] .text-gray-500 { color: #d1d5db !important; }
+[data-theme='dark'] input:not([type='checkbox']):not([type='radio']),
+[data-theme='dark'] select,
+[data-theme='dark'] textarea { background-color: #111827 !important; color: #f9fafb !important; }
+
+.hidden { display: none !important; }
+
 /* Loading spinner for forms */
 .loading {
     opacity: 0.6;

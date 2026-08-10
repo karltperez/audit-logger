@@ -26,6 +26,7 @@
         <div class="bg-white shadow-sm rounded-lg border border-gray-200">
             <div class="px-4 py-5 sm:p-6">
                 <form method="POST" class="space-y-6">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <!-- Username -->
                     <div>
                         <label for="username" class="block text-sm font-medium text-gray-700">
@@ -58,17 +59,17 @@
                                     class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
                                 <option value="">Select a role</option>
                                 <option value="viewer">Viewer</option>
-                                <option value="contributor">Contributor</option>
-                                <option value="content_manager">Content Manager</option>
-                                <option value="administrator">Administrator</option>
+                                <option value="editor">Editor</option>
+                                <option value="admin">Administrator</option>
+                                <option value="superadmin">Superadmin</option>
                             </select>
                         </div>
                         <div class="mt-2 text-sm text-gray-500">
                             <div class="space-y-1">
                                 <p><strong>Viewer:</strong> View-only access, cannot add/edit findings or access management features</p>
-                                <p><strong>Contributor:</strong> Add and edit findings, limited content creation permissions</p>
-                                <p><strong>Content Manager:</strong> Add/edit/delete findings, access to activity logs, content management</p>
-                                <p><strong>Administrator:</strong> Full access to everything - user management, system settings, all features</p>
+                                <p><strong>Editor:</strong> Add and edit findings and review activity logs</p>
+                                <p><strong>Administrator:</strong> Manage audit content, including deletion</p>
+                                <p><strong>Superadmin:</strong> Manage users, alerts, logs, and all audit content</p>
                             </div>
                         </div>
                     </div>

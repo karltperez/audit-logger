@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Settings - Internal Audit Tracker</title>
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body class="bg-gray-900 min-h-screen">
     <div class="max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
@@ -21,6 +23,7 @@
                 {% endif %}
             {% endwith %}
             <form method="POST" class="space-y-4">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <div>
                     <label for="current_password" class="block text-sm font-medium text-gray-300">Current Password</label>
                     <input type="password" id="current_password" name="current_password" required

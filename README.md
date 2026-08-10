@@ -15,7 +15,7 @@ A comprehensive, secure web-based application for tracking internal audit findin
 ## ✨ Key Features
 
 ### 🔐 **Security-First Design**
-- **4-Tier Role System**: Administrator → Content Manager → Contributor → Viewer
+- **4-Tier Role System**: Superadmin → Administrator → Editor → Viewer
 - **Session Management**: Secure sessions with configurable timeout (5-30 minutes)
 - **Rate Limiting**: Built-in brute force protection with Flask-Limiter
 - **Password Policies**: Industry-standard requirements (NIST/OWASP compliant)
@@ -50,13 +50,13 @@ A comprehensive, secure web-based application for tracking internal audit findin
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template/your-template)
 
-[![Deploy to Heroku](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/macximum12/audit-logger)
+[![Deploy to Heroku](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/karltperez/audit-logger)
 
 ### Option 2: Local Development
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/macximum12/audit-logger.git
+git clone https://github.com/karltperez/audit-logger.git
 cd audit-logger
 
 # 2. Create virtual environment
@@ -72,7 +72,7 @@ python main.py
 # 5. Open your browser to http://localhost:5000
 ```
 
-**Default Login**: `admin` / `admin123` (⚠️ **Change immediately!**)
+For local development, the initial login is `admin` / `ChangeMeNow2026!` and a password change is required immediately. Set `INITIAL_ADMIN_PASSWORD` to override it. Production startup requires both `SECRET_KEY` and `INITIAL_ADMIN_PASSWORD` when creating a new database.
 
 ### Option 3: Docker Deployment
 
@@ -83,14 +83,14 @@ docker run -p 5000:5000 -e SECRET_KEY=your-secret-key audit-tracker:latest
 
 ## 📋 User Roles & Permissions
 
-| Feature | Administrator | Content Manager | Contributor | Viewer |
-|---------|:-------------:|:---------------:|:-----------:|:------:|
+| Feature | Superadmin | Administrator | Editor | Viewer |
+|---------|:----------:|:-------------:|:------:|:------:|
 | View Findings | ✅ | ✅ | ✅ | ✅ |
 | Add/Edit Findings | ✅ | ✅ | ✅ | ❌ |
 | Delete Findings | ✅ | ✅ | ❌ | ❌ |
-| Import Excel | ✅ | ✅ | ❌ | ❌ |
-| Activity Logs | ✅ | ✅ | ❌ | ❌ |
-| User Management | ✅ | ❌ | ❌ | ❌ |
+| Import Excel | ✅ | ✅ | ✅ | ❌ |
+| Activity Logs | ✅ | ✅ | ✅ | ❌ |
+| User Management and Alerts | ✅ | ❌ | ❌ | ❌ |
 | System Settings | ✅ | ❌ | ❌ | ❌ |
 
 ## 🏗️ Architecture
@@ -248,8 +248,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## 🛟 Support & Community
 
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/macximum12/audit-logger/issues)
-- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/macximum12/audit-logger/discussions)
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/karltperez/audit-logger/issues)
+- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/karltperez/audit-logger/discussions)
 - 📧 **Email Support**: support@audit-tracker.com
 - 💬 **Discord Community**: [Join our Discord](https://discord.gg/audit-tracker)
 
@@ -276,6 +276,6 @@ MIT License - Feel free to use in commercial and personal projects!
 
 Made with ❤️ by developers, for organizations who need professional audit tracking.
 
-[🚀 Get Started](https://github.com/macximum12/audit-logger) • [📖 Documentation](DEPLOYMENT.md) • [💬 Community](https://github.com/macximum12/audit-logger/discussions)
+[🚀 Get Started](https://github.com/karltperez/audit-logger) • [📖 Documentation](DEPLOYMENT.md) • [💬 Community](https://github.com/karltperez/audit-logger/discussions)
 
 </div>
