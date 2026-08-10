@@ -111,7 +111,7 @@ audit-logger/
 │   ├── css/
 │   │   └── style.css     # Custom styles
 │   └── js/
-│       └── app.js        # JavaScript functionality
+│       └── theme.js      # Persistent theme controls
 ├── templates/            # HTML templates
 │   ├── base.html
 │   ├── index.html
@@ -121,11 +121,9 @@ audit-logger/
 │   ├── findings.html
 │   ├── import.html
 │   ├── activity_logs.html
-│   ├── manage_users.html
-│   ├── add_user.html
-│   ├── edit_user.html
-│   ├── first_login.html
-│   └── admin/           # Admin templates
+│   ├── settings.html
+│   ├── force_password_change.html
+│   └── admin/           # User management templates
 └── audit_findings.db    # Database (auto-created)
 ```
 
