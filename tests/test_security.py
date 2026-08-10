@@ -62,7 +62,11 @@ def authenticated_session(client, username, role):
 
 def test_login_requires_csrf(client):
     response = client.post('/login', data={'username': 'nobody', 'password': 'bad'})
-    assert response.status_code == 400
+    assert response.status_code == 302
+    assert response.headers['Location'] == '/login'
+
+    follow_up = client.get('/login')
+    assert b'Your session expired after an application update.' in follow_up.data
 
 
 def test_legacy_plaintext_password_is_migrated(client):

@@ -110,6 +110,15 @@ def validate_csrf_token():
         if not expected or not submitted or not secrets.compare_digest(expected, submitted):
             abort(400, description='Invalid or missing CSRF token')
 
+@app.errorhandler(400)
+def handle_bad_request(error):
+    if getattr(error, 'description', '') != 'Invalid or missing CSRF token':
+        return error
+
+    session.clear()
+    flash('Your session expired after an application update. Please sign in again.', 'warning')
+    return redirect(url_for('login'))
+
 @app.context_processor
 def inject_csrf_token():
     return {'csrf_token': get_csrf_token}
