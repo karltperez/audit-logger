@@ -113,7 +113,7 @@ audit-logger/
 │   └── admin/             # Admin panel templates
 ├── 📁 static/             # CSS, JS, images
 │   ├── css/style.css      # Custom styling
-│   └── js/app.js          # Client-side functionality
+│   └── js/theme.js        # Light/dark theme controls
 ├── 📄 requirements.txt    # Python dependencies
 ├── 📄 Procfile           # Deployment configuration
 ├── 📄 railway.json       # Railway-specific config
