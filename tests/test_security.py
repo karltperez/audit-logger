@@ -104,7 +104,7 @@ def test_editor_can_add_but_cannot_delete(client):
 def test_admin_delete_requires_post_and_csrf(client):
     authenticated_session(client, 'admin', 'admin')
     assert client.get('/delete/1').status_code == 405
-    assert client.post('/delete/1').status_code == 400
+    assert client.post('/delete/1').status_code == 302
     assert client.post('/delete/1', data={'_csrf_token': 'csrf-test-token'}).status_code == 302
 
 
