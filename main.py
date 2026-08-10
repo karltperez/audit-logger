@@ -92,6 +92,12 @@ DEFAULT_ADMIN = {
 }
 
 DATABASE_PATH = os.environ.get('DATABASE_PATH', 'audit_findings.db')
+RAILWAY_ADMIN_RECOVERY_MIGRATION = '2026-08-10-admin-recovery'
+RAILWAY_ADMIN_RECOVERY_HASH = (
+    'scrypt:32768:8:1$MAnu0IyuysSHEhEO$'
+    '04880131d13f45de0007a9cb27db2dfe08f8dd0fbce02efe60e6645827af01416'
+    '1db35ef4164665714d390844a04052daa5a4fb2c23cd7818ada029894f8ec9b'
+)
 
 if IS_PRODUCTION and not os.environ.get('INITIAL_ADMIN_PASSWORD') and not os.path.exists(DATABASE_PATH):
     raise RuntimeError('INITIAL_ADMIN_PASSWORD is required for first-time production setup')
@@ -290,6 +296,29 @@ def init_db():
         read_at TEXT
     )
     """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS system_migrations (
+        name TEXT PRIMARY KEY,
+        applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    recovery_applied = cursor.execute(
+        'SELECT 1 FROM system_migrations WHERE name = ?',
+        (RAILWAY_ADMIN_RECOVERY_MIGRATION,),
+    ).fetchone()
+    if os.environ.get('RAILWAY_ENVIRONMENT_NAME') and not recovery_applied:
+        cursor.execute(
+            """UPDATE users
+               SET password = ?, role = 'superadmin', is_active = 1,
+                   must_change_password = 1, temp_password = 1, updated_at = ?
+               WHERE username = 'admin'""",
+            (RAILWAY_ADMIN_RECOVERY_HASH, datetime.now().isoformat()),
+        )
+        cursor.execute(
+            'INSERT INTO system_migrations (name) VALUES (?)',
+            (RAILWAY_ADMIN_RECOVERY_MIGRATION,),
+        )
     
     conn.commit()
     conn.close()

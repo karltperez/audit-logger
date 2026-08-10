@@ -154,3 +154,21 @@ def test_superadmin_can_send_alert_and_delete_user(client):
     )
     assert response.status_code == 302
     assert main.get_user_from_db('recipient') is None
+
+
+def test_railway_admin_recovery_runs_once(client, monkeypatch):
+    conn = sqlite3.connect(main.DATABASE_PATH)
+    conn.execute("UPDATE users SET password = 'unknown', role = 'viewer' WHERE username = 'admin'")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setenv('RAILWAY_ENVIRONMENT_NAME', 'production')
+    main.init_db()
+    recovered = main.get_user_from_db('admin')
+    assert recovered['role'] == 'superadmin'
+    assert recovered['must_change_password'] == 1
+    assert check_password_hash(recovered['password'], 'tTzJJ3ZgLZc6Ht95hTgax6QU')
+
+    main.update_user_password('admin', 'DifferentSecure2026!')
+    main.init_db()
+    assert check_password_hash(main.get_user_from_db('admin')['password'], 'DifferentSecure2026!')
