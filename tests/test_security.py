@@ -110,6 +110,8 @@ def test_theme_assets_and_toggle_are_available(client):
     assert b'/static/js/theme.js' in login_page.data
     assert b'/static/css/style.css' in login_page.data
     assert client.get('/static/js/theme.js').status_code == 200
+    stylesheet = client.get('/static/css/style.css')
+    assert b'.hidden { display: none !important; }' not in stylesheet.data
 
     authenticated_session(client, 'admin', 'admin')
     dashboard = client.get('/')

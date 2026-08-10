@@ -78,8 +78,6 @@ textarea {
 [data-theme='dark'] select,
 [data-theme='dark'] textarea { background-color: #111827 !important; color: #f9fafb !important; }
 
-.hidden { display: none !important; }
-
 /* Loading spinner for forms */
 .loading {
     opacity: 0.6;
